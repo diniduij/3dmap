@@ -344,7 +344,7 @@ const tileset = viewer.scene.primitives.add(
   })
 );
 
-// Load 3D Mapping GeoJSON
+// Load  GeoJSON
 let mapping3dDataSource = null;
 let mapping3dVisible = true;
 let selectedMapping3d = null;
@@ -511,7 +511,7 @@ document.getElementById("toggleGoogle3D").onclick = () => {
   }
 };
 
-// Toggle 3D Mapping visibility
+// Toggle  visibility
 document.getElementById("toggle3DMapping").onclick = () => {
   mapping3dVisible = !mapping3dVisible;
   if (mapping3dDataSource) {
@@ -519,10 +519,10 @@ document.getElementById("toggle3DMapping").onclick = () => {
   }
   const btn = document.getElementById("toggle3DMapping");
   if (mapping3dVisible) {
-    btn.textContent = '🗺️ 3D Mapping (ON)';
+    btn.textContent = '🗺️ Trenton Block Groups (ON)';
     btn.classList.add('active');
   } else {
-    btn.textContent = '🗺️ 3D Mapping (OFF)';
+    btn.textContent = '🗺️ Trenton Block Groupsg (OFF)';
     btn.classList.remove('active');
   }
 };
@@ -739,4 +739,5 @@ setTimeout(updateCameraControls, 500);
 </script>
 </body>
 </html>
+
 
