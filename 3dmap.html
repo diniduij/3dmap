@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>3D Mapping Viewer</title>
+
+<script src="https://ajax.googleapis.com/ajax/libs/cesiumjs/1.105/Build/Cesium/Cesium.js"></script>
+<link href="https://ajax.googleapis.com/ajax/libs/cesiumjs/1.105/Build/Cesium/Widgets/widgets.css" rel="stylesheet" />
+<script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+
+<style>
+html, body, #cesiumContainer {
+  width: 100%; height: 100%; margin: 0; overflow: hidden; background-color: #000;
+}
+
+/* UI Panel */
+#sidePanel {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  background: rgba(25, 25, 25, 0.9);
+  padding: 15px;
+  border-radius: 8px;
+  z-index: 10;
+  color: white;
+  font-family: sans-serif;
+  width: 220px;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+}
+
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 15px;
+}
+
+#sidePanel button {
+  background: #333;
+  color: white;
+  border: 1px solid #555;
+  border-radius: 4px;
+  padding: 8px;
+  cursor: pointer;
+  text-align: left;
+}
+
+#sidePanel button.active {
+  background: #2d89ef;
+  border-color: #4fc3f7;
+}
+
+/* Popup */
+#popup {
+  position: absolute;
+  background: rgba(15, 15, 20, 0.98);
+  color: white;
+  padding: 0;
+  border-radius: 8px;
+  font-family: 'Segoe UI', sans-serif;
+  font-size: 13px;
+  display: none;
+  z-index: 20;
+  pointer-events: auto;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.7), 0 0 1px rgba(79, 195, 247, 0.3);
+  backdrop-filter: blur(4px);
+  border: 1px solid rgba(79, 195, 247, 0.2);
+  max-width: 280px;
+  overflow: hidden;
+}
+
+#popup .popup-header {
+  background: linear-gradient(135deg, rgba(45, 137, 239, 0.3) 0%, rgba(79, 195, 247, 0.2) 100%);
+  padding: 12px 15px;
+  border-bottom: 1px solid rgba(79, 195, 247, 0.2);
+}
+
+#popup .popup-title {
+  flex: 1;
+}
+
+#popup .popup-title .feature-label {
+  font-weight: 600;
+  font-size: 14px;
+  margin-bottom: 2px;
+}
+
+#popup .popup-title .category-text {
+  font-size: 11px;
+  color: #aaa;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+#popup .popup-body {
+  padding: 12px 15px;
+}
+
+#popup .popup-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: 12px;
+}
+
+#popup .popup-row:last-child {
+  border-bottom: none;
+}
+
+#popup .popup-label {
+  color: #999;
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  font-weight: 500;
+}
+
+#popup .popup-value {
+  color: #e0e0e0;
+  font-weight: 500;
+}
+
+/* Camera Controls */
+#cameraControls {
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
+  background: rgba(25, 25, 25, 0.9);
+  padding: 15px;
+  border-radius: 8px;
+  z-index: 10;
+  color: white;
+  font-family: sans-serif;
+  width: 200px;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+}
+
+.camera-control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.control-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.control-row label {
+  min-width: 50px;
+  color: #aaa;
+  text-transform: uppercase;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+.control-row input[type="range"] {
+  flex: 1;
+  height: 4px;
+  cursor: pointer;
+  accent-color: #4fc3f7;
+}
+
+.control-value {
+  min-width: 45px;
+  text-align: right;
+  color: #4fc3f7;
+  font-weight: bold;
+  font-size: 11px;
+}
+
+#compass {
+  width: 100%;
+  height: 100px;
+  background: radial-gradient(circle, #222, #111);
+  border: 2px solid #555;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+
+#compass-needle {
+  width: 40px;
+  height: 60px;
+  background: linear-gradient(to bottom, #ff4444 0%, #ff4444 50%, #4fc3f7 50%, #4fc3f7 100%);
+  clip-path: polygon(30% 0%, 70% 0%, 100% 100%, 0% 100%);
+  transform-origin: center 50px;
+  position: absolute;
+}
+
+#compass-text {
+  position: absolute;
+  font-size: 10px;
+  color: #4fc3f7;
+  font-weight: bold;
+  top: 5px;
+  left: 5px;
+}
+
+/* Feature List */
+#featureListContainer {
+  max-height: 300px;
+  overflow-y: auto;
+  border: 1px solid #555;
+  border-radius: 4px;
+  background: #222;
+  margin-bottom: 15px;
+}
+
+#featureList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.feature-list-item {
+  padding: 10px;
+  border-bottom: 1px solid #333;
+  cursor: pointer;
+  font-size: 12px;
+  color: #ccc;
+  transition: all 0.2s ease;
+}
+
+.feature-list-item:hover {
+  background: #333;
+  color: #e0e0e0;
+}
+
+.feature-list-item.selected {
+  background: #2d89ef;
+  color: white;
+  border-left: 3px solid #4fc3f7;
+  padding-left: 7px;
+}
+
+#featureListContainer::-webkit-scrollbar {
+  width: 6px;
+}
+
+#featureListContainer::-webkit-scrollbar-track {
+  background: #222;
+  border-radius: 3px;
+}
+
+#featureListContainer::-webkit-scrollbar-thumb {
+  background: #555;
+  border-radius: 3px;
+}
+
+#featureListContainer::-webkit-scrollbar-thumb:hover {
+  background: #666;
+}
+
+</style>
+</head>
+
+<body>
+
+<div id="cesiumContainer"></div>
+
+<div id="sidePanel">
+  <div style="padding: 10px 0; font-size: 11px; color: #4fc3f7; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">💾 Screenshot Tools</div>
+  <div class="filter-group">
+    <button id="screenshotHiRes" style="width: 100%; background: #2d89ef; border: 1px solid #4fc3f7;">🖼️ High-Res (3x)</button>
+  </div>
+
+  <div style="height: 1px; background: #555; margin: 12px 0;"></div>
+
+  <div class="filter-group">
+    <button id="toggleGoogle3D" class="active" style="width: 100%;">🏢 Google 3D Buildings (ON)</button>
+    <button id="toggle3DMapping" class="active" style="width: 100%;">🗺️ 3D Mapping (ON)</button>
+  </div>
+
+  <div style="height: 1px; background: #555; margin: 12px 0;"></div>
+
+  <div style="padding: 10px 0; font-size: 11px; color: #4fc3f7; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">📍 Features</div>
+  <div id="featureListContainer">
+    <ul id="featureList"></ul>
+  </div>
+
+  <button id="clearFeature" style="display: none; width: 100%; background: rgba(255, 76, 76, 0.8); border: 1px solid #ff5252; border-radius: 4px; padding: 8px; cursor: pointer; color: white;">✕ Clear Selection</button>
+</div>
+
+<div id="popup"></div>
+
+<div id="cameraControls">
+  <div id="compass">
+    <div id="compass-needle"></div>
+    <div id="compass-text">0°</div>
+  </div>
+  
+  <div class="camera-control-group">
+    <div class="control-row">
+      <label>Height</label>
+      <input type="number" id="cameraHeight" min="100" max="50000" value="800" style="flex: 1; padding: 4px; background: #222; color: #4fc3f7; border: 1px solid #555; border-radius: 3px;">
+      <div class="control-value">m</div>
+    </div>
+    <div class="control-row">
+      <label>Tilt</label>
+      <input type="number" id="cameraTilt" min="-90" max="0" value="-45" style="flex: 1; padding: 4px; background: #222; color: #4fc3f7; border: 1px solid #555; border-radius: 3px;">
+      <div class="control-value">°</div>
+    </div>
+    <div class="control-row">
+      <label>Heading</label>
+      <input type="number" id="cameraHeading" min="0" max="360" value="0" style="flex: 1; padding: 4px; background: #222; color: #4fc3f7; border: 1px solid #555; border-radius: 3px;">
+      <div class="control-value">°</div>
+    </div>
+  </div>
+  
+  <button id="resetCamera" style="width: 100%; background: #333; color: white; border: 1px solid #555; border-radius: 4px; padding: 8px; cursor: pointer;">🔄 Reset Camera</button>
+</div>
+
+<script>
+// Initialize Viewer
+Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI0YzEzOTJiOS04ZDk5LTQ2YTgtYTVlYS1iOWFkMjA5NWYzMTUiLCJpZCI6Mzg4NDA0LCJpYXQiOjE3NzA1NTA4MjF9.uWOUlsxIdFQiF2UXiYsdePVjY3pwZu37Pf8yR3p2QAg';
+
+const viewer = new Cesium.Viewer("cesiumContainer", {
+  baseLayerPicker: false,
+  timeline: false,
+  animation: false,
+  infoBox: false,
+  selectionIndicator: false,
+  terrainProvider: Cesium.createWorldTerrain()
+});
+
+viewer.scene.globe.baseColor = Cesium.Color.BLACK;
+
+// Add Google 3D Buildings
+let google3DTilesVisible = true;
+const tileset = viewer.scene.primitives.add(
+  new Cesium.Cesium3DTileset({
+    url: "https://tile.googleapis.com/v1/3dtiles/root.json?key=AIzaSyBiAU9yNxKyMgc48aRzspTOksmm1Vgitx4"
+  })
+);
+
+// Load 3D Mapping GeoJSON
+let mapping3dDataSource = null;
+let mapping3dVisible = true;
+let selectedMapping3d = null;
+
+Cesium.GeoJsonDataSource.load('3dmapping.geojson', {
+  clampToGround: true
+}).then(function(dataSource) {
+  viewer.dataSources.add(dataSource);
+  mapping3dDataSource = dataSource;
+
+  dataSource.entities.values.forEach(function(entity, index) {
+    if (Cesium.defined(entity.polygon)) {
+      entity.polygon.material = Cesium.Color.fromCssColorString('#000000').withAlpha(1.0);
+      entity.polygon.outline = true;
+      entity.polygon.outlineColor = Cesium.Color.fromCssColorString('#666666').withAlpha(0.15);
+      entity.polygon.outlineWidth = 1;
+      entity.polygon.classificationType = Cesium.ClassificationType.BOTH;
+      entity.is3DMapping = true;
+      entity.listIndex = index;
+    }
+  });
+  
+  // Populate feature list
+  populateFeatureList(dataSource);
+}).catch(error => console.error('Error loading 3DMapping:', error));
+
+function populateFeatureList(dataSource) {
+  const featureList = document.getElementById('featureList');
+  featureList.innerHTML = '';
+  
+  dataSource.entities.values.forEach((entity, index) => {
+    if (entity.is3DMapping) {
+      const li = document.createElement('li');
+      li.className = 'feature-list-item';
+      li.dataset.index = index;
+      
+      let featureName = 'Feature ' + (index + 1);
+      if (entity.properties && entity.properties.Geo_FIPS) {
+        featureName = 'FIPS: ' + entity.properties.Geo_FIPS.getValue();
+      } else if (entity.properties && entity.properties.name) {
+        featureName = entity.properties.name.getValue();
+      }
+      
+      li.textContent = featureName;
+      li.addEventListener('click', () => {
+        isolateMapping3d(entity);
+      });
+      
+      featureList.appendChild(li);
+    }
+  });
+}
+
+// Camera Start
+tileset.readyPromise.then(() => {
+  viewer.camera.flyTo({
+    destination: Cesium.Cartesian3.fromDegrees(-74.779, 40.224, 800),
+    orientation: { pitch: Cesium.Math.toRadians(-30) }
+  });
+});
+
+// Interaction Handler
+const popup = document.getElementById("popup");
+const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
+
+handler.setInputAction((click) => {
+  const picked = viewer.scene.pick(click.position);
+  
+  if (Cesium.defined(picked) && picked.id && picked.id.is3DMapping) {
+    // Clear previous selection
+    if (selectedMapping3d && selectedMapping3d !== picked.id) {
+      clearSelection();
+    }
+    
+    // Isolate the clicked feature
+    isolateMapping3d(picked.id);
+    return;
+  }
+  
+  // Clear selection when clicking on empty areas
+  clearSelection();
+}, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+
+function isolateMapping3d(feature) {
+  selectedMapping3d = feature;
+  
+  if (mapping3dDataSource) {
+    mapping3dDataSource.entities.values.forEach(entity => {
+      if (entity === feature) {
+        entity.polygon.material = Cesium.Color.fromCssColorString('#000000').withAlpha(0);
+        entity.polygon.outlineColor = Cesium.Color.fromCssColorString('#666666').withAlpha(0.15);
+      } else {
+        entity.polygon.material = Cesium.Color.fromCssColorString('#000000').withAlpha(1.0);
+        entity.polygon.outlineColor = Cesium.Color.fromCssColorString('#666666').withAlpha(0.15);
+      }
+    });
+  }
+  
+  // Update feature list highlighting
+  document.querySelectorAll('.feature-list-item').forEach(item => {
+    item.classList.remove('selected');
+  });
+  document.querySelectorAll('.feature-list-item').forEach(item => {
+    if (parseInt(item.dataset.index) === feature.listIndex) {
+      item.classList.add('selected');
+      item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  });
+  
+  document.getElementById("clearFeature").style.display = 'block';
+  
+  // Fly to the selected feature with zoom and pan
+  try {
+    const positions = feature.polygon.hierarchy.getValue(Cesium.JulianDate.now()).positions;
+    if (positions && positions.length > 0) {
+      const boundingSphere = Cesium.BoundingSphere.fromPoints(positions);
+      
+      viewer.camera.flyToBoundingSphere(boundingSphere, {
+        duration: 0.8,
+        offset: new Cesium.HeadingPitchRange(
+          Cesium.Math.toRadians(0),
+          Cesium.Math.toRadians(-45),
+          Math.max(boundingSphere.radius * 2, 200)
+        ),
+        complete: updateCameraControls
+      });
+    }
+  } catch (e) {
+    console.warn('Could not fly to feature:', e);
+  }
+}
+
+function clearSelection() {
+  selectedMapping3d = null;
+  
+  if (mapping3dDataSource) {
+    mapping3dDataSource.entities.values.forEach(entity => {
+      entity.polygon.material = Cesium.Color.fromCssColorString('#000000').withAlpha(1.0);
+      entity.polygon.outlineColor = Cesium.Color.fromCssColorString('#666666').withAlpha(0.15);
+    });
+  }
+  
+  // Remove feature list highlighting
+  document.querySelectorAll('.feature-list-item').forEach(item => {
+    item.classList.remove('selected');
+  });
+  
+  document.getElementById("clearFeature").style.display = 'none';
+}
+
+// Toggle Google 3D Buildings visibility
+document.getElementById("toggleGoogle3D").onclick = () => {
+  google3DTilesVisible = !google3DTilesVisible;
+  if (tileset) {
+    tileset.show = google3DTilesVisible;
+  }
+  const btn = document.getElementById("toggleGoogle3D");
+  if (google3DTilesVisible) {
+    btn.textContent = '🏢 Google 3D Buildings (ON)';
+    btn.classList.add('active');
+  } else {
+    btn.textContent = '🏢 Google 3D Buildings (OFF)';
+    btn.classList.remove('active');
+  }
+};
+
+// Toggle 3D Mapping visibility
+document.getElementById("toggle3DMapping").onclick = () => {
+  mapping3dVisible = !mapping3dVisible;
+  if (mapping3dDataSource) {
+    mapping3dDataSource.show = mapping3dVisible;
+  }
+  const btn = document.getElementById("toggle3DMapping");
+  if (mapping3dVisible) {
+    btn.textContent = '🗺️ 3D Mapping (ON)';
+    btn.classList.add('active');
+  } else {
+    btn.textContent = '🗺️ 3D Mapping (OFF)';
+    btn.classList.remove('active');
+  }
+};
+
+// Clear selection button
+document.getElementById("clearFeature").onclick = clearSelection;
+
+// Camera Controls
+let cameraDefaultPosition = {
+  lon: -74.779,
+  lat: 40.224,
+  height: 800,
+  pitch: -45,
+  heading: 0
+};
+
+function updateCameraControls() {
+  // Get camera position
+  const cartographic = Cesium.Cartographic.fromCartesian(viewer.camera.position);
+  const height = cartographic.height;
+  const pitch = Cesium.Math.toDegrees(viewer.camera.pitch);
+  const heading = Cesium.Math.toDegrees(viewer.camera.heading);
+  
+  // Update height input
+  if (height > 0) {
+    document.getElementById('cameraHeight').value = Math.round(height);
+  }
+  
+  // Update tilt input
+  document.getElementById('cameraTilt').value = Math.round(pitch);
+  
+  // Update heading input (normalize to 0-360)
+  const normalizedHeading = (heading % 360 + 360) % 360;
+  document.getElementById('cameraHeading').value = Math.round(normalizedHeading);
+  
+  // Update compass
+  const degree = Math.round(normalizedHeading);
+  document.getElementById('compass-text').textContent = degree + '°';
+  
+  const needle = document.getElementById('compass-needle');
+  needle.style.transform = `rotate(${degree}deg)`;
+}
+
+function updateCompass() {
+  const heading = viewer.camera.heading;
+  const degree = Math.round(Cesium.Math.toDegrees(heading)) % 360;
+  document.getElementById('compass-text').textContent = degree + '°';
+  
+  const needle = document.getElementById('compass-needle');
+  needle.style.transform = `rotate(${degree}deg)`;
+}
+
+document.getElementById('cameraHeight').addEventListener('change', (e) => {
+  const height = parseInt(e.target.value);
+  if (height >= 100 && height <= 50000) {
+    // Get current camera position in cartographic coordinates
+    const cartographic = Cesium.Cartographic.fromCartesian(viewer.camera.position);
+    const currentLon = Cesium.Math.toDegrees(cartographic.longitude);
+    const currentLat = Cesium.Math.toDegrees(cartographic.latitude);
+    
+    // Only change height, keep current location and orientation
+    viewer.camera.setView({
+      destination: Cesium.Cartesian3.fromDegrees(currentLon, currentLat, height),
+      orientation: {
+        heading: viewer.camera.heading,
+        pitch: viewer.camera.pitch,
+        roll: 0
+      }
+    });
+  }
+});
+
+document.getElementById('cameraTilt').addEventListener('change', (e) => {
+  const tilt = parseInt(e.target.value);
+  if (tilt >= -90 && tilt <= 0) {
+    // Only change pitch/tilt, keep position and heading
+    viewer.camera.setView({
+      destination: viewer.camera.position,
+      orientation: {
+        heading: viewer.camera.heading,
+        pitch: Cesium.Math.toRadians(tilt),
+        roll: 0
+      }
+    });
+  }
+});
+
+document.getElementById('cameraHeading').addEventListener('change', (e) => {
+  const heading = parseInt(e.target.value);
+  if (heading >= 0 && heading <= 360) {
+    // Only change heading, keep position and pitch
+    viewer.camera.setView({
+      destination: viewer.camera.position,
+      orientation: {
+        heading: Cesium.Math.toRadians(heading),
+        pitch: viewer.camera.pitch,
+        roll: 0
+      }
+    });
+  }
+});
+
+document.getElementById('resetCamera').addEventListener('click', () => {
+  document.getElementById('cameraHeight').value = cameraDefaultPosition.height;
+  document.getElementById('cameraTilt').value = cameraDefaultPosition.pitch;
+  document.getElementById('cameraHeading').value = cameraDefaultPosition.heading;
+  
+  viewer.camera.flyTo({
+    destination: Cesium.Cartesian3.fromDegrees(
+      cameraDefaultPosition.lon,
+      cameraDefaultPosition.lat,
+      cameraDefaultPosition.height
+    ),
+    orientation: {
+      heading: Cesium.Math.toRadians(cameraDefaultPosition.heading),
+      pitch: Cesium.Math.toRadians(cameraDefaultPosition.pitch),
+      roll: 0
+    },
+    duration: 1.0
+  });
+});
+
+// High-Resolution Screenshot
+function captureScreenshotCesium(scale) {
+  const button = document.getElementById('screenshotHiRes');
+  const originalText = button.innerHTML;
+  
+  const sidePanel = document.getElementById('sidePanel');
+  const cameraControls = document.getElementById('cameraControls');
+  const container = document.getElementById('cesiumContainer');
+  
+  sidePanel.style.display = 'none';
+  cameraControls.style.display = 'none';
+  button.innerHTML = '⏳ Capturing...';
+  button.disabled = true;
+  
+  const originalWidth = container.clientWidth;
+  const originalHeight = container.clientHeight;
+  const canvas = viewer.scene.canvas;
+  const originalCanvasWidth = canvas.width;
+  const originalCanvasHeight = canvas.height;
+  
+  const newWidth = originalWidth * scale;
+  const newHeight = originalHeight * scale;
+  
+  container.style.width = newWidth + 'px';
+  container.style.height = newHeight + 'px';
+  canvas.width = newWidth;
+  canvas.height = newHeight;
+  
+  setTimeout(() => {
+    try {
+      viewer.render();
+      
+      requestAnimationFrame(() => {
+        canvas.toBlob((blob) => {
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          const timestamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
+          const dateOnly = timestamp.split('T')[0];
+          
+          let filename = `trenton_${dateOnly}.png`;
+          if (selectedMapping3d && selectedMapping3d.properties && selectedMapping3d.properties.Geo_FIPS) {
+            filename = `trenton_${selectedMapping3d.properties.Geo_FIPS}_${dateOnly}.png`;
+          }
+          
+          link.href = url;
+          link.download = filename;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+          
+          container.style.width = originalWidth + 'px';
+          container.style.height = originalHeight + 'px';
+          canvas.width = originalCanvasWidth;
+          canvas.height = originalCanvasHeight;
+          
+          sidePanel.style.display = 'block';
+          cameraControls.style.display = 'block';
+          button.innerHTML = originalText;
+          button.disabled = false;
+          
+          viewer.render();
+        }, 'image/png');
+      });
+    } catch (error) {
+      console.error('Screenshot capture failed:', error);
+      alert('Failed to capture screenshot: ' + error.message);
+      
+      container.style.width = originalWidth + 'px';
+      container.style.height = originalHeight + 'px';
+      canvas.width = originalCanvasWidth;
+      canvas.height = originalCanvasHeight;
+      
+      sidePanel.style.display = 'block';
+      cameraControls.style.display = 'block';
+      button.innerHTML = originalText;
+      button.disabled = false;
+      viewer.render();
+    }
+  }, 200);
+}
+
+document.getElementById('screenshotHiRes').addEventListener('click', function() {
+  captureScreenshotCesium(3);
+});
+
+// Update all camera controls on camera change (from mouse, keyboard, or code)
+viewer.camera.changed.addEventListener(updateCameraControls);
+
+// Initial update
+setTimeout(updateCameraControls, 500);
+</script>
+</body>
+</html>
