@@ -280,6 +280,7 @@ html, body, #cesiumContainer {
   <div class="filter-group">
     <button id="toggleGoogle3D" class="active" style="width: 100%;">🏢 Google 3D Buildings (ON)</button>
     <button id="toggle3DMapping" class="active" style="width: 100%;">🗺️ Trenton Block Group (ON)</button>
+    <button id="toggleBoundary" class="active" style="width: 100%;">🧭 Boundary Layer (ON)</button>
   </div>
 
   <div style="height: 1px; background: #555; margin: 12px 0;"></div>
@@ -308,7 +309,7 @@ html, body, #cesiumContainer {
     </div>
     <div class="control-row">
       <label>Tilt</label>
-      <input type="number" id="cameraTilt" min="-90" max="0" value="-45" style="flex: 1; padding: 4px; background: #222; color: #4fc3f7; border: 1px solid #555; border-radius: 3px;">
+      <input type="number" id="cameraTilt" min="-90" max="0" value="-25" style="flex: 1; padding: 4px; background: #222; color: #4fc3f7; border: 1px solid #555; border-radius: 3px;">
       <div class="control-value">°</div>
     </div>
     <div class="control-row">
@@ -349,6 +350,10 @@ let mapping3dDataSource = null;
 let mapping3dVisible = true;
 let selectedMapping3d = null;
 
+// Boundary layer (same GeoJSON as an outline layer rendered on top)
+let boundaryDataSource = null;
+let boundaryVisible = true;
+
 Cesium.GeoJsonDataSource.load('3dmapping.geojson', {
   clampToGround: true
 }).then(function(dataSource) {
@@ -369,6 +374,39 @@ Cesium.GeoJsonDataSource.load('3dmapping.geojson', {
   
   // Populate feature list
   populateFeatureList(dataSource);
+  
+  // Create a boundary (outline) layer from the same GeoJSON so it renders above the filled polygons
+  try {
+    boundaryDataSource = new Cesium.CustomDataSource('mappingBoundary');
+    viewer.dataSources.add(boundaryDataSource);
+
+    dataSource.entities.values.forEach(function(entity) {
+      if (Cesium.defined(entity.polygon)) {
+        try {
+          const hierarchy = entity.polygon.hierarchy.getValue(Cesium.JulianDate.now());
+          const positions = hierarchy.positions;
+          // Add a polyline entity to the boundary data source using the polygon ring positions
+          boundaryDataSource.entities.add({
+            polyline: {
+              positions: positions,
+              width: 2,
+              material: Cesium.Color.fromCssColorString('#4fc3f7').withAlpha(0.95),
+              clampToGround: true
+            },
+            isBoundary: true,
+            listIndex: entity.listIndex
+          });
+        } catch (e) {
+          // ignore individual entity conversion errors
+          console.warn('Boundary creation failed for an entity:', e);
+        }
+      }
+    });
+
+    boundaryDataSource.show = boundaryVisible;
+  } catch (e) {
+    console.error('Failed to create boundary layer:', e);
+  }
 }).catch(error => console.error('Error loading 3DMapping:', error));
 
 function populateFeatureList(dataSource) {
@@ -527,6 +565,22 @@ document.getElementById("toggle3DMapping").onclick = () => {
   }
 };
 
+// Toggle boundary (outline) layer visibility
+document.getElementById('toggleBoundary').onclick = () => {
+  boundaryVisible = !boundaryVisible;
+  if (boundaryDataSource) {
+    boundaryDataSource.show = boundaryVisible;
+  }
+  const btn = document.getElementById('toggleBoundary');
+  if (boundaryVisible) {
+    btn.textContent = '🧭 Boundary Layer (ON)';
+    btn.classList.add('active');
+  } else {
+    btn.textContent = '🧭 Boundary Layer (OFF)';
+    btn.classList.remove('active');
+  }
+};
+
 // Clear selection button
 document.getElementById("clearFeature").onclick = clearSelection;
 
@@ -535,7 +589,7 @@ let cameraDefaultPosition = {
   lon: -74.779,
   lat: 40.224,
   height: 800,
-  pitch: -45,
+  pitch: -25,
   heading: 0
 };
 
@@ -739,5 +793,4 @@ setTimeout(updateCameraControls, 500);
 </script>
 </body>
 </html>
-
 
